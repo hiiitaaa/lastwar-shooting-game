@@ -11,29 +11,15 @@ const CONFIG = {
     stageDuration: 1800, // 30秒（60fps * 30）
     bossHp: 500,
     bossAttackSpeed: 3,
-    videoPath: {
-        // 各ルートの動画ファイル
-        sister: [
-            'videos/sister-1.mp4',
-            'videos/sister-2.mp4',
-            'videos/sister-3.mp4'
-        ],
-        olderSister: [
-            'videos/older-sister-1.mp4',
-            'videos/older-sister-2.mp4',
-            'videos/older-sister-3.mp4'
-        ],
-        mother: [
-            'videos/mother-1.mp4',
-            'videos/mother-2.mp4',
-            'videos/mother-3.mp4'
-        ]
-    }
+    scenesCSV: 'scenes.csv'
 };
+
+// シーンデータ（CSVから読み込む）
+let scenesData = [];
 
 // ゲーム状態
 let gameState = {
-    screen: 'start', // 'start', 'game', 'reward'
+    screen: 'start', // 'start', 'game', 'novel', 'video', 'reward'
     score: 0,
     soldiers: 1,
     items: {
@@ -47,7 +33,10 @@ let gameState = {
     frame: 0,
     canvas: null,
     ctx: null,
-    flashTimer: 0
+    flashTimer: 0,
+    // ノベルシステム用
+    currentScenes: [], // 現在のステージのシーン配列
+    currentSceneIndex: 0 // 現在表示中のシーンインデックス
 };
 
 // ゲームオブジェクト
@@ -600,8 +589,8 @@ function stageComplete() {
         determineRoute();
     }
 
-    // リワード画面へ
-    showReward();
+    // ノベルシーン開始
+    startNovelScene();
 }
 
 // ストーリールート決定（最初に取ったアイテム優先）
@@ -631,10 +620,128 @@ function determineRoute() {
     }
 }
 
+// CSVファイルを読み込む
+async function loadScenes() {
+    try {
+        const response = await fetch(CONFIG.scenesCSV);
+        const text = await response.text();
+        const lines = text.split('\n');
+
+        // ヘッダー行をスキップ
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line === '') continue;
+
+            const parts = line.split(',');
+            if (parts.length >= 5) {
+                scenesData.push({
+                    route: parts[0],
+                    stage: parseInt(parts[1]),
+                    character_name: parts[2],
+                    text: parts[3],
+                    background: parts[4],
+                    background_type: parts[5] // 'image' or 'video'
+                });
+            }
+        }
+
+        console.log('シーンデータ読み込み完了:', scenesData.length, '件');
+    } catch (error) {
+        console.error('CSVファイルの読み込みに失敗:', error);
+        alert('シーンデータの読み込みに失敗しました。');
+    }
+}
+
+// 指定されたルートとステージのシーンを取得
+function getScenesForStage(route, stage) {
+    return scenesData.filter(scene =>
+        scene.route === route && scene.stage === stage
+    );
+}
+
+// ノベルシーン表示開始
+function startNovelScene() {
+    gameState.screen = 'novel';
+    gameState.currentSceneIndex = 0;
+
+    // 現在のステージのシーンを取得
+    gameState.currentScenes = getScenesForStage(
+        gameState.storyRoute,
+        gameState.currentStage
+    );
+
+    if (gameState.currentScenes.length === 0) {
+        console.warn('シーンが見つかりません。リワード画面へ');
+        showReward();
+        return;
+    }
+
+    // 画面を切り替え
+    document.getElementById('game-screen').style.display = 'none';
+    document.getElementById('novel-screen').style.display = 'block';
+    document.getElementById('reward-screen').style.display = 'none';
+
+    // 最初のシーンを表示
+    displayCurrentScene();
+}
+
+// 現在のシーンを表示
+function displayCurrentScene() {
+    const scene = gameState.currentScenes[gameState.currentSceneIndex];
+
+    // キャラクター名とテキストを設定
+    document.getElementById('novel-character-name').textContent = scene.character_name;
+    document.getElementById('novel-text').textContent = scene.text;
+
+    const novelImage = document.getElementById('novel-image');
+    const novelVideo = document.getElementById('novel-video');
+    const novelVideoSource = document.getElementById('novel-video-source');
+
+    if (scene.background_type === 'image') {
+        // 静止画を表示
+        novelImage.src = scene.background;
+        novelImage.style.display = 'block';
+        novelVideo.style.display = 'none';
+        novelVideo.pause();
+    } else if (scene.background_type === 'video') {
+        // 動画を背景として再生
+        novelVideoSource.src = scene.background;
+        novelVideo.load();
+        novelVideo.play();
+        novelVideo.style.display = 'block';
+        novelImage.style.display = 'none';
+    }
+
+    // ノベル画面を表示
+    document.getElementById('novel-screen').style.display = 'block';
+    gameState.screen = 'novel';
+}
+
+// 次のシーンへ進む
+function nextScene() {
+    gameState.currentSceneIndex++;
+
+    if (gameState.currentSceneIndex < gameState.currentScenes.length) {
+        // まだシーンが残っている
+        displayCurrentScene();
+    } else {
+        // 全シーン終了、リワード画面へ
+        showReward();
+    }
+}
+
+// ノベル画面のクリックイベント
+document.getElementById('novel-screen').addEventListener('click', () => {
+    if (gameState.screen === 'novel') {
+        nextScene();
+    }
+});
+
 // リワード画面表示
 function showReward() {
     gameState.screen = 'reward';
     document.getElementById('game-screen').style.display = 'none';
+    document.getElementById('novel-screen').style.display = 'none';
     document.getElementById('reward-screen').style.display = 'flex';
 
     // 統計表示
@@ -658,13 +765,6 @@ function showReward() {
         title = `ステージ${gameState.currentStage}クリア！`;
     }
     document.getElementById('reward-title').textContent = title;
-
-    // 動画設定（全画面表示）
-    const videoSource = document.getElementById('video-source');
-    const video = document.getElementById('reward-video');
-    const videoIndex = Math.min(gameState.currentStage, 2); // 0,1,2
-    videoSource.src = CONFIG.videoPath[gameState.storyRoute][videoIndex];
-    video.load();
 }
 
 // UI更新
@@ -803,4 +903,8 @@ document.getElementById('restart-button').addEventListener('click', () => {
     nextStage();
 });
 
-console.log('ゲーム読み込み完了！');
+// ページ読み込み時にCSVを読み込む
+window.addEventListener('load', async () => {
+    await loadScenes();
+    console.log('ゲーム読み込み完了！');
+});

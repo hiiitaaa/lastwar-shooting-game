@@ -45,15 +45,24 @@
             <canvas id="game-canvas"></canvas>
         </div>
 
+        <!-- ノベル画面 -->
+        <div id="novel-screen" style="display: none;">
+            <div id="novel-background">
+                <img id="novel-image" src="" alt="Character" style="display: none;">
+                <video id="novel-video" loop muted autoplay style="display: none;">
+                    <source id="novel-video-source" src="" type="video/mp4">
+                </video>
+            </div>
+            <div id="novel-textbox">
+                <div id="novel-character-name"></div>
+                <div id="novel-text"></div>
+                <div id="novel-continue">▼ クリックで続く</div>
+            </div>
+        </div>
+
         <div id="reward-screen" style="display: none;">
             <div id="reward-content">
                 <h2 id="reward-title">ステージクリア！</h2>
-                <div id="video-container">
-                    <video id="reward-video" controls>
-                        <source id="video-source" src="" type="video/mp4">
-                        お使いのブラウザは動画タグをサポートしていません。
-                    </video>
-                </div>
                 <div id="reward-stats">
                     <h3>獲得アイテム</h3>
                     <p>妹: <span id="final-sister-count">0</span></p>

@@ -426,6 +426,210 @@ gameState = {
 
 ---
 
+## Phase 6: ノベルシステムの実装と動画統合 (2025-11-01)
+
+参考ノベルゲーム（TyranoScript製）の構造を分析し、より洗練されたご褒美システムを実装しました。
+
+### 6-1. 参考ノベルゲームからの学び
+
+**重要な発見**:
+- 動画は背景として再生され、その上にテキストボックスが表示される
+- 動画再生中もテキストは進行可能（クリックで次へ）
+- 静止画と動画をシームレスに切り替え
+- 動画はループ再生され、没入感を維持
+
+### 6-2. システムの全面的な改修
+
+**旧システムの問題点**:
+- 動画が全画面で再生され、テキストが消える
+- 動画終了まで次に進めない
+- 静止画と動画の遷移が不自然
+- トリガーセリフの概念が複雑
+
+**新システム**:
+```
+ノベル画面（統一）
+├── 背景レイヤー
+│   ├── 静止画（<img>）
+│   └── 動画（<video loop>）← 常にループ再生
+└── テキストボックス（常に表示）
+    ├── キャラクター名
+    ├── セリフ
+    └── クリック促進アイコン
+```
+
+### 6-3. CSVフォーマットの簡略化
+
+**旧フォーマット（複雑）**:
+```csv
+route,stage,scene_type,character_name,text,image,trigger_video,video_path
+sister,1,text,妹,セリフ,images/sister.jpg,video1,
+sister,1,video,,,,,videos/sister-1-part1.mp4
+```
+
+**新フォーマット（シンプル）**:
+```csv
+route,stage,character_name,text,background,background_type
+sister,1,妹,セリフ,images/sister.jpg,image
+sister,1,妹,セリフ,videos/sister-1-part1.mp4,video
+```
+
+- scene_typeを廃止（すべてテキストシーン）
+- trigger_videoを廃止（背景が自動切り替え）
+- backgroundに画像・動画両方を指定可能
+
+### 6-4. 実装の詳細
+
+**HTML構造**:
+```html
+<div id="novel-screen">
+  <div id="novel-background">
+    <img id="novel-image"> <!-- 静止画 -->
+    <video id="novel-video" loop muted autoplay> <!-- 動画 -->
+  </div>
+  <div id="novel-textbox">
+    <div id="novel-character-name"></div>
+    <div id="novel-text"></div>
+    <div id="novel-continue">▼ クリックで続く</div>
+  </div>
+</div>
+```
+
+**動画再生の仕様**:
+- `loop`: 動画を繰り返し再生（没入感維持）
+- `muted`: 音声なし（テキスト読み上げに集中）
+- `autoplay`: 自動再生開始
+- `object-fit: contain`: アスペクト比維持
+
+**JavaScriptロジック**:
+```javascript
+function displayCurrentScene() {
+    const scene = gameState.currentScenes[gameState.currentSceneIndex];
+
+    // テキスト更新
+    document.getElementById('novel-character-name').textContent = scene.character_name;
+    document.getElementById('novel-text').textContent = scene.text;
+
+    // 背景切り替え
+    if (scene.background_type === 'image') {
+        novelImage.src = scene.background;
+        novelImage.style.display = 'block';
+        novelVideo.style.display = 'none';
+        novelVideo.pause();
+    } else if (scene.background_type === 'video') {
+        novelVideoSource.src = scene.background;
+        novelVideo.load();
+        novelVideo.play();
+        novelVideo.style.display = 'block';
+        novelImage.style.display = 'none';
+    }
+}
+```
+
+### 6-5. ゲームフローの改善
+
+**旧フロー**:
+```
+ステージクリア → ノベル（テキスト） → 全画面動画1
+→ ノベル（テキスト） → 全画面動画2 → リワード画面
+```
+
+**新フロー**:
+```
+ステージクリア
+  ↓
+ノベルシーン（背景=静止画）
+  ↓ クリック
+ノベルシーン（背景=静止画）
+  ↓ クリック
+ノベルシーン（背景=動画1）← 動画ループ再生、テキスト表示
+  ↓ クリック
+ノベルシーン（背景=動画1）← 同じ動画、別のセリフ
+  ↓ クリック
+ノベルシーン（背景=静止画）
+  ↓ クリック
+ノベルシーン（背景=動画2）← 動画ループ再生
+  ↓ クリック
+...
+  ↓
+リワード画面（統計表示）
+  ↓
+次のステージへ
+```
+
+### 6-6. シナリオ例（妹ルート・ステージ1）
+
+```csv
+sister,1,妹,お兄ちゃん、お疲れ様！,images/sister.jpg,image
+sister,1,妹,今日も頑張ってくれたんだね,images/sister.jpg,image
+sister,1,妹,ご褒美をあげるね♪,images/sister.jpg,image
+sister,1,妹,んっ…♡,videos/sister-1-part1.mp4,video
+sister,1,妹,あっ…もっと♡,videos/sister-1-part1.mp4,video
+sister,1,妹,どうだった？,images/sister.jpg,image
+sister,1,妹,もっと見たい？,images/sister.jpg,image
+sister,1,妹,じゃあ、特別にもう一つ見せてあげる,images/sister.jpg,image
+sister,1,妹,んんっ…激しい♡,videos/sister-1-part2.mp4,video
+sister,1,妹,お兄ちゃん…好き♡,videos/sister-1-part2.mp4,video
+```
+
+### 6-7. 技術的な改善点
+
+**削除したコード**:
+- 動画専用画面（`#video-screen`）
+- 全画面動画再生システム
+- トリガービデオ判定ロジック
+- 複雑なシーン遷移管理
+
+**追加・改善したコード**:
+- 動画を背景レイヤーとして統合
+- シンプルな背景切り替えロジック
+- ループ再生による没入感向上
+- 統一されたノベルUI
+
+**コード削減量**: 約80行（シンプル化）
+
+### 6-8. ユーザー体験の向上
+
+**改善前**:
+- 動画が終わるまで待つ必要がある
+- 動画とテキストが分断されている
+- スキップできない
+
+**改善後**:
+- クリックで自由に進める
+- 動画を見ながらセリフを読める
+- ループ再生で好きなだけ見られる
+- ノベルゲーム風の一体感
+
+### 6-9. 必要なアセット
+
+**画像ファイル（3個）**:
+- `images/sister.jpg` - 妹の立ち絵
+- `images/older-sister.jpg` - 姉の立ち絵
+- `images/mother.jpg` - 母の立ち絵
+
+**動画ファイル（18個）**:
+各ルート × 3ステージ × 2本 = 18本
+- `videos/sister-1-part1.mp4`, `videos/sister-1-part2.mp4`
+- `videos/sister-2-part1.mp4`, `videos/sister-2-part2.mp4`
+- `videos/sister-3-part1.mp4`, `videos/sister-3-part2.mp4`
+- `videos/older-sister-1-part1.mp4`, `videos/older-sister-1-part2.mp4`
+- `videos/older-sister-2-part1.mp4`, `videos/older-sister-2-part2.mp4`
+- `videos/older-sister-3-part1.mp4`, `videos/older-sister-3-part2.mp4`
+- `videos/mother-1-part1.mp4`, `videos/mother-1-part2.mp4`
+- `videos/mother-2-part1.mp4`, `videos/mother-2-part2.mp4`
+- `videos/mother-3-part1.mp4`, `videos/mother-3-part2.mp4`
+
+## Phase 6で学んだこと
+
+1. **既存ノベルゲームの分析価値**: TyranoScriptの実装から学んだ動画背景手法
+2. **シンプルさの重要性**: 複雑なトリガーシステムより、シンプルな背景切り替え
+3. **ユーザー体験の優先**: 自由にクリックで進める > 動画終了待ち
+4. **没入感の演出**: ループ再生により、プレイヤーが自分のペースで楽しめる
+5. **データ駆動設計**: CSVでシナリオを完全に管理、拡張性が向上
+
+---
+
 作成日: 2025-10-31
-最終更新: 2025-10-31
+最終更新: 2025-11-01
 開発者: Claude (Anthropic) + User
