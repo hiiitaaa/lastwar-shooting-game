@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ラストウォー風シューティングゲーム</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="start-screen">
+            <h1>ラストウォー風シューティング</h1>
+            <p>左右矢印キーまたはスワイプで移動</p>
+            <p>アイテムを集めてご褒美をゲット！</p>
+            <button id="start-button">ゲームスタート</button>
+        </div>
+
+        <div id="game-screen" style="display: none;">
+            <div id="ui-overlay">
+                <div id="score-panel">
+                    <div>スコア: <span id="score">0</span></div>
+                    <div>兵士数: <span id="soldiers">1</span></div>
+                </div>
+                <div id="item-counter">
+                    <div class="item-count">
+                        <span class="item-icon sister">妹</span>
+                        <span id="sister-count">0</span>
+                    </div>
+                    <div class="item-count">
+                        <span class="item-icon older-sister">姉</span>
+                        <span id="older-sister-count">0</span>
+                    </div>
+                    <div class="item-count">
+                        <span class="item-icon mother">母</span>
+                        <span id="mother-count">0</span>
+                    </div>
+                </div>
+                <div id="stage-progress">
+                    <div id="progress-bar">
+                        <div id="progress-fill"></div>
+                    </div>
+                    <div id="progress-text">0%</div>
+                </div>
+            </div>
+            <canvas id="game-canvas"></canvas>
+        </div>
+
+        <div id="reward-screen" style="display: none;">
+            <div id="reward-content">
+                <h2 id="reward-title">ステージクリア！</h2>
+                <div id="video-container">
+                    <video id="reward-video" controls>
+                        <source id="video-source" src="" type="video/mp4">
+                        お使いのブラウザは動画タグをサポートしていません。
+                    </video>
+                </div>
+                <div id="reward-stats">
+                    <h3>獲得アイテム</h3>
+                    <p>妹: <span id="final-sister-count">0</span></p>
+                    <p>姉: <span id="final-older-sister-count">0</span></p>
+                    <p>母: <span id="final-mother-count">0</span></p>
+                    <p>最終スコア: <span id="final-score">0</span></p>
+                </div>
+                <button id="restart-button">もう一度プレイ</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
