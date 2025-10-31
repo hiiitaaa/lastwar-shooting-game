@@ -13,8 +13,8 @@ const CONFIG = {
     bossAttackSpeed: 3,
     scenesCSV: 'scenes.csv',
     // プレイヤーグラフィック設定
-    playerGraphic: 'images/player.mp4',  // .mp4, .gif, .png に対応
-    playerGraphicType: 'mp4'  // 'mp4', 'gif', 'png'
+    playerGraphic: 'images/player.webm',  // .webm, .mp4, .gif, .png に対応
+    playerGraphicType: 'webm'  // 'webm', 'mp4', 'gif', 'png'
 };
 
 // シーンデータ（CSVから読み込む）
@@ -25,13 +25,14 @@ let playerGraphicElement = null;
 
 // プレイヤーグラフィックの初期化
 function initPlayerGraphic() {
-    if (CONFIG.playerGraphicType === 'mp4') {
-        // MP4動画の場合
+    if (CONFIG.playerGraphicType === 'webm' || CONFIG.playerGraphicType === 'mp4') {
+        // WebM/MP4動画の場合
         playerGraphicElement = document.createElement('video');
         playerGraphicElement.src = CONFIG.playerGraphic;
         playerGraphicElement.loop = true;
         playerGraphicElement.muted = true;
         playerGraphicElement.autoplay = true;
+        playerGraphicElement.playsInline = true; // モバイル対応
         playerGraphicElement.play();
     } else {
         // GIF/PNGの場合
@@ -74,8 +75,8 @@ class Player {
     constructor(x, y) {
         this.x = x;
         this.y = y;
-        this.width = 40;
-        this.height = 40;
+        this.width = 120;  // 40 → 120（3倍）
+        this.height = 120; // 40 → 120（3倍）
         this.speed = CONFIG.playerSpeed;
         this.shootCooldown = 0;
     }
@@ -85,8 +86,8 @@ class Player {
         let graphicReady = false;
 
         if (playerGraphicElement) {
-            if (CONFIG.playerGraphicType === 'mp4') {
-                // MP4動画の場合：readyStateをチェック
+            if (CONFIG.playerGraphicType === 'webm' || CONFIG.playerGraphicType === 'mp4') {
+                // WebM/MP4動画の場合：readyStateをチェック
                 graphicReady = playerGraphicElement.readyState >= 2; // HAVE_CURRENT_DATA以上
             } else {
                 // GIF/PNGの場合：completeをチェック
