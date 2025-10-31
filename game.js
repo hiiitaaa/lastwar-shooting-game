@@ -4,23 +4,36 @@ const CONFIG = {
     canvasHeight: 600,
     playerSpeed: 6,
     bulletSpeed: 10,
-    obstacleSpeed: 1.5, // 半分の速度に
-    soldierGaugeSpeed: 1.5, // 半分の速度に
-    obstacleSpawnRate: 120, // 2秒ごと（少し減らす）
-    soldierGaugeSpawnRate: 180, // 3秒ごと
-    stageDuration: 2400, // 40秒でボス戦
+    obstacleSpeed: 1.5,
+    soldierGaugeSpeed: 1.5,
+    obstacleSpawnRate: 120,
+    soldierGaugeSpawnRate: 180,
+    stageDuration: 1800, // 30秒（60fps * 30）
     bossHp: 500,
-    bossAttackSpeed: 3, // ボスの降下攻撃速度
+    bossAttackSpeed: 3,
     videoPath: {
-        sister: 'videos/sister.mp4',
-        olderSister: 'videos/older-sister.mp4',
-        mother: 'videos/mother.mp4'
+        // 各ルートの動画ファイル
+        sister: [
+            'videos/sister-1.mp4',
+            'videos/sister-2.mp4',
+            'videos/sister-3.mp4'
+        ],
+        olderSister: [
+            'videos/older-sister-1.mp4',
+            'videos/older-sister-2.mp4',
+            'videos/older-sister-3.mp4'
+        ],
+        mother: [
+            'videos/mother-1.mp4',
+            'videos/mother-2.mp4',
+            'videos/mother-3.mp4'
+        ]
     }
 };
 
 // ゲーム状態
 let gameState = {
-    screen: 'start', // 'start', 'game', 'boss', 'reward'
+    screen: 'start', // 'start', 'game', 'reward'
     score: 0,
     soldiers: 1,
     items: {
@@ -28,10 +41,13 @@ let gameState = {
         olderSister: 0,
         mother: 0
     },
+    itemHistory: [], // アイテム取得履歴（最初に取ったもの優先用）
+    currentStage: 0, // 0=チュートリアル, 1-3=各ルートのステージ
+    storyRoute: null, // 'sister', 'olderSister', 'mother'
     frame: 0,
     canvas: null,
     ctx: null,
-    isBossBattle: false
+    flashTimer: 0
 };
 
 // ゲームオブジェクト
@@ -197,6 +213,8 @@ class Obstacle {
             // 報酬アイテム取得
             if (this.hasReward && this.rewardType) {
                 gameState.items[this.rewardType]++;
+                // 取得履歴に追加（最初に取ったもの優先のため）
+                gameState.itemHistory.push(this.rewardType);
             }
             gameState.score += this.maxHp * 5;
         }
@@ -390,9 +408,46 @@ function spawnObstacle() {
     const x = lane === 'left' ? 200 : 600; // レーン中心に配置
 
     const y = -60;
-    const hp = Math.floor(Math.random() * 50) + 20; // 20-70のランダムHP（増やした）
 
-    // 50%の確率で報酬アイテム付き（確率を上げた）
+    // 同じレーンに近い位置に他のオブジェクトがないかチェック
+    const tooClose = [...obstacles, ...soldierGauges].some(obj => {
+        const sameX = Math.abs(obj.x - x) < 50; // 同じレーン
+        const closeY = Math.abs(obj.y - y) < 150; // Y座標が近い
+        return sameX && closeY;
+    });
+
+    // 近すぎる場合はスポーンをスキップ
+    if (tooClose) {
+        return;
+    }
+
+    // ステージと時間経過に応じてHPを段階的に増加
+    const progress = gameState.frame / CONFIG.stageDuration; // 0.0 ~ 1.0
+    const stageDifficulty = gameState.currentStage; // 0=チュートリアル, 1-3=各ルート
+    let minHp, maxHp;
+
+    // ベースHP（ステージによる基礎値）
+    const baseMinHp = 5 + (stageDifficulty * 15); // ステージ0:5, 1:20, 2:35, 3:50
+    const baseMaxHp = 15 + (stageDifficulty * 20); // ステージ0:15, 1:35, 2:55, 3:75
+
+    // 時間経過による上昇
+    if (progress < 0.33) {
+        // 序盤
+        minHp = baseMinHp;
+        maxHp = baseMaxHp;
+    } else if (progress < 0.66) {
+        // 中盤
+        minHp = baseMinHp + 10;
+        maxHp = baseMaxHp + 15;
+    } else {
+        // 終盤
+        minHp = baseMinHp + 20;
+        maxHp = baseMaxHp + 30;
+    }
+
+    const hp = Math.floor(Math.random() * (maxHp - minHp + 1)) + minHp;
+
+    // 50%の確率で報酬アイテム付き
     let rewardType = null;
     if (Math.random() < 0.5) {
         const types = ['sister', 'olderSister', 'mother'];
@@ -409,8 +464,26 @@ function spawnSoldierGauge() {
     const x = lane === 'left' ? 200 : 600; // レーン中心に配置
 
     const y = -50;
+
+    // 同じレーンに近い位置に他のオブジェクトがないかチェック
+    const tooClose = [...obstacles, ...soldierGauges].some(obj => {
+        const sameX = Math.abs(obj.x - x) < 50; // 同じレーン
+        const closeY = Math.abs(obj.y - y) < 150; // Y座標が近い
+        return sameX && closeY;
+    });
+
+    // 近すぎる場合はスポーンをスキップ
+    if (tooClose) {
+        return;
+    }
+
     const amount = Math.floor(Math.random() * 5) + 2; // 2-6人増加（増やした）
     soldierGauges.push(new SoldierGauge(x, y, amount));
+}
+
+// 画面フラッシュエフェクト
+function flashScreen() {
+    gameState.flashTimer = 10; // 10フレーム間フラッシュ
 }
 
 // ゲームループ
@@ -434,81 +507,67 @@ function gameLoop() {
     ctx.stroke();
     ctx.setLineDash([]); // 点線をリセット
 
-    // ボス戦判定
-    if (!gameState.isBossBattle && gameState.frame >= CONFIG.stageDuration) {
-        startBossBattle();
+    // ステージクリア判定
+    if (gameState.frame >= CONFIG.stageDuration) {
+        stageComplete();
+        return;
     }
 
-    if (gameState.isBossBattle) {
-        // ボス戦モード
-        if (boss && boss.active) {
-            boss.update();
-            boss.draw(ctx);
+    // 障害物と兵士ゲージのスポーン
+    gameState.frame++;
 
-            // 弾とボスの衝突判定
-            bullets.forEach(bullet => {
-                if (bullet.active && checkCollision(bullet, boss)) {
-                    bullet.active = false;
-                    boss.takeDamage();
-                }
-            });
+    if (gameState.frame % CONFIG.obstacleSpawnRate === 0) {
+        spawnObstacle();
+    }
+    if (gameState.frame % CONFIG.soldierGaugeSpawnRate === 0) {
+        spawnSoldierGauge();
+    }
 
-            // ボスの攻撃がプレイヤーに当たったかチェック
-            if (boss.checkPlayerCollision(player)) {
-                // プレイヤーがダメージを受ける（ここでは兵士数を減らす）
-                if (gameState.soldiers > 1) {
-                    gameState.soldiers = Math.max(1, gameState.soldiers - 2);
-                }
-            }
+    // 障害物の更新と描画
+    obstacles = obstacles.filter(obstacle => obstacle.active);
+    obstacles.forEach(obstacle => {
+        obstacle.update();
+        obstacle.draw(ctx);
+    });
 
-            // ボス撃破判定
-            if (!boss.active) {
-                endGame();
-                return;
-            }
-        }
-    } else {
-        // 通常モード: 障害物と兵士ゲージのスポーン
-        gameState.frame++;
+    // 兵士ゲージの更新と描画
+    soldierGauges = soldierGauges.filter(gauge => gauge.active);
+    soldierGauges.forEach(gauge => {
+        gauge.update();
+        gauge.draw(ctx);
+    });
 
-        if (gameState.frame % CONFIG.obstacleSpawnRate === 0) {
-            spawnObstacle();
-        }
-        if (gameState.frame % CONFIG.soldierGaugeSpawnRate === 0) {
-            spawnSoldierGauge();
-        }
-
-        // 障害物の更新と描画
-        obstacles = obstacles.filter(obstacle => obstacle.active);
+    // 衝突判定: 弾と障害物
+    bullets.forEach(bullet => {
         obstacles.forEach(obstacle => {
-            obstacle.update();
-            obstacle.draw(ctx);
-        });
-
-        // 兵士ゲージの更新と描画
-        soldierGauges = soldierGauges.filter(gauge => gauge.active);
-        soldierGauges.forEach(gauge => {
-            gauge.update();
-            gauge.draw(ctx);
-        });
-
-        // 衝突判定: 弾と障害物
-        bullets.forEach(bullet => {
-            obstacles.forEach(obstacle => {
-                if (bullet.active && obstacle.active && checkCollision(bullet, obstacle)) {
-                    bullet.active = false;
-                    obstacle.takeDamage();
-                }
-            });
-        });
-
-        // 衝突判定: プレイヤーと兵士ゲージ
-        soldierGauges.forEach(gauge => {
-            if (gauge.active && checkCollision(player, gauge)) {
-                gauge.collect();
+            if (bullet.active && obstacle.active && checkCollision(bullet, obstacle)) {
+                bullet.active = false;
+                obstacle.takeDamage();
             }
         });
-    }
+    });
+
+    // 衝突判定: プレイヤーと兵士ゲージ
+    soldierGauges.forEach(gauge => {
+        if (gauge.active && checkCollision(player, gauge)) {
+            gauge.collect();
+        }
+    });
+
+    // 衝突判定: プレイヤーと障害物（ダメージ）
+    obstacles.forEach(obstacle => {
+        if (obstacle.active && checkCollision(player, obstacle)) {
+            // 障害物のHPだけ兵士数を減らす
+            const damage = obstacle.hp;
+            gameState.soldiers = Math.max(1, gameState.soldiers - damage);
+
+            // 障害物を破壊
+            obstacle.active = false;
+
+            // 視覚的フィードバック（画面を赤く点滅）
+            flashScreen();
+        }
+    });
 
     // プレイヤーの更新と描画
     player.update();
@@ -524,16 +583,88 @@ function gameLoop() {
     // UI更新
     updateUI();
 
+    // ダメージフラッシュ効果
+    if (gameState.flashTimer > 0) {
+        ctx.fillStyle = `rgba(255, 0, 0, ${gameState.flashTimer / 20})`;
+        ctx.fillRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+        gameState.flashTimer--;
+    }
+
     requestAnimationFrame(gameLoop);
 }
 
-// ボス戦開始
-function startBossBattle() {
-    gameState.isBossBattle = true;
-    boss = new Boss();
-    // 既存の障害物とゲージをクリア
-    obstacles = [];
-    soldierGauges = [];
+// ステージクリア処理
+function stageComplete() {
+    // チュートリアル完了時にルート決定
+    if (gameState.currentStage === 0) {
+        determineRoute();
+    }
+
+    // リワード画面へ
+    showReward();
+}
+
+// ストーリールート決定（最初に取ったアイテム優先）
+function determineRoute() {
+    const items = gameState.items;
+    const maxCount = Math.max(items.sister, items.olderSister, items.mother);
+
+    // 同数の場合は最初に取得したものを優先
+    if (items.sister === maxCount && items.olderSister === maxCount && items.mother === maxCount) {
+        // 全て同数の場合、履歴の最初
+        gameState.storyRoute = gameState.itemHistory[0] || 'sister';
+    } else if (items.sister === maxCount && items.olderSister === maxCount) {
+        // 妹と姉が同数
+        gameState.storyRoute = gameState.itemHistory.find(item => item === 'sister' || item === 'olderSister') || 'sister';
+    } else if (items.sister === maxCount && items.mother === maxCount) {
+        // 妹と母が同数
+        gameState.storyRoute = gameState.itemHistory.find(item => item === 'sister' || item === 'mother') || 'sister';
+    } else if (items.olderSister === maxCount && items.mother === maxCount) {
+        // 姉と母が同数
+        gameState.storyRoute = gameState.itemHistory.find(item => item === 'olderSister' || item === 'mother') || 'olderSister';
+    } else if (items.sister === maxCount) {
+        gameState.storyRoute = 'sister';
+    } else if (items.olderSister === maxCount) {
+        gameState.storyRoute = 'olderSister';
+    } else {
+        gameState.storyRoute = 'mother';
+    }
+}
+
+// リワード画面表示
+function showReward() {
+    gameState.screen = 'reward';
+    document.getElementById('game-screen').style.display = 'none';
+    document.getElementById('reward-screen').style.display = 'flex';
+
+    // 統計表示
+    document.getElementById('final-sister-count').textContent = gameState.items.sister;
+    document.getElementById('final-older-sister-count').textContent = gameState.items.olderSister;
+    document.getElementById('final-mother-count').textContent = gameState.items.mother;
+    document.getElementById('final-score').textContent = gameState.score;
+
+    // タイトル設定
+    let title = '';
+    if (gameState.currentStage === 0) {
+        // チュートリアル完了
+        const routeNames = {
+            sister: '妹ルート',
+            olderSister: '姉ルート',
+            mother: '母ルート'
+        };
+        title = `${routeNames[gameState.storyRoute]}に決定！`;
+    } else {
+        // ステージクリア
+        title = `ステージ${gameState.currentStage}クリア！`;
+    }
+    document.getElementById('reward-title').textContent = title;
+
+    // 動画設定（全画面表示）
+    const videoSource = document.getElementById('video-source');
+    const video = document.getElementById('reward-video');
+    const videoIndex = Math.min(gameState.currentStage, 2); // 0,1,2
+    videoSource.src = CONFIG.videoPath[gameState.storyRoute][videoIndex];
+    video.load();
 }
 
 // UI更新
@@ -545,14 +676,12 @@ function updateUI() {
     document.getElementById('mother-count').textContent = gameState.items.mother;
 
     // プログレスバー更新
-    if (gameState.isBossBattle) {
-        document.getElementById('progress-text').textContent = 'ボス戦！';
-        document.getElementById('progress-fill').style.width = '100%';
-    } else {
-        const progress = (gameState.frame / CONFIG.stageDuration) * 100;
-        document.getElementById('progress-fill').style.width = progress + '%';
-        document.getElementById('progress-text').textContent = Math.floor(progress) + '%';
-    }
+    const progress = (gameState.frame / CONFIG.stageDuration) * 100;
+    document.getElementById('progress-fill').style.width = progress + '%';
+
+    // ステージ表示
+    const stageText = gameState.currentStage === 0 ? 'チュートリアル' : `ステージ${gameState.currentStage}`;
+    document.getElementById('progress-text').textContent = `${stageText} - ${Math.floor(progress)}%`;
 }
 
 // ゲーム開始
@@ -562,12 +691,17 @@ function startGame() {
     document.getElementById('game-screen').style.display = 'block';
     gameState.screen = 'game';
 
-    // ゲーム状態リセット
-    gameState.score = 0;
-    gameState.soldiers = 1;
-    gameState.items = { sister: 0, olderSister: 0, mother: 0 };
+    // 初回起動時のみリセット
+    if (gameState.currentStage === 0 && !gameState.storyRoute) {
+        gameState.score = 0;
+        gameState.soldiers = 1;
+        gameState.items = { sister: 0, olderSister: 0, mother: 0 };
+        gameState.itemHistory = [];
+        gameState.storyRoute = null;
+    }
+
     gameState.frame = 0;
-    gameState.isBossBattle = false;
+    gameState.flashTimer = 0;
 
     // キャンバス設定
     const canvas = document.getElementById('game-canvas');
@@ -581,51 +715,43 @@ function startGame() {
     bullets = [];
     obstacles = [];
     soldierGauges = [];
-    boss = null;
 
     // ゲームループ開始
     gameLoop();
 }
 
-// ゲーム終了
-function endGame() {
-    gameState.screen = 'reward';
-    document.getElementById('game-screen').style.display = 'none';
-    document.getElementById('reward-screen').style.display = 'flex';
+// 次のステージへ
+function nextStage() {
+    gameState.currentStage++;
 
-    // 統計表示
-    document.getElementById('final-sister-count').textContent = gameState.items.sister;
-    document.getElementById('final-older-sister-count').textContent = gameState.items.olderSister;
-    document.getElementById('final-mother-count').textContent = gameState.items.mother;
-    document.getElementById('final-score').textContent = gameState.score;
-
-    // 最も多く集めたアイテムを判定
-    const items = gameState.items;
-    let maxType = 'sister';
-    let maxCount = items.sister;
-
-    if (items.olderSister > maxCount) {
-        maxType = 'olderSister';
-        maxCount = items.olderSister;
-    }
-    if (items.mother > maxCount) {
-        maxType = 'mother';
-        maxCount = items.mother;
+    // 最後のステージ（3）をクリアしたらエンディング
+    if (gameState.currentStage > 3) {
+        showEnding();
+        return;
     }
 
-    // タイトル変更
-    const titles = {
-        sister: '妹エンディング！',
-        olderSister: '姉エンディング！',
-        mother: '母エンディング！'
-    };
-    document.getElementById('reward-title').textContent = titles[maxType];
+    // 次のステージ開始
+    startGame();
+}
 
-    // 動画設定
-    const videoSource = document.getElementById('video-source');
-    const video = document.getElementById('reward-video');
-    videoSource.src = CONFIG.videoPath[maxType];
-    video.load();
+// エンディング表示
+function showEnding() {
+    // TODO: エンディング画面を実装
+    alert('エンディング！ゲームクリアおめでとうございます！');
+    resetGame();
+}
+
+// ゲーム完全リセット
+function resetGame() {
+    document.getElementById('reward-screen').style.display = 'none';
+    document.getElementById('start-screen').style.display = 'flex';
+    gameState.screen = 'start';
+    gameState.currentStage = 0;
+    gameState.storyRoute = null;
+    gameState.score = 0;
+    gameState.soldiers = 1;
+    gameState.items = { sister: 0, olderSister: 0, mother: 0 };
+    gameState.itemHistory = [];
 }
 
 // キーボード入力
@@ -673,9 +799,8 @@ document.addEventListener('touchmove', (e) => {
 // ボタンイベント
 document.getElementById('start-button').addEventListener('click', startGame);
 document.getElementById('restart-button').addEventListener('click', () => {
-    document.getElementById('reward-screen').style.display = 'none';
-    document.getElementById('start-screen').style.display = 'flex';
-    gameState.screen = 'start';
+    // リワード画面のボタンを「次へ」に変更
+    nextStage();
 });
 
 console.log('ゲーム読み込み完了！');
