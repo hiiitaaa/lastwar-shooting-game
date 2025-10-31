@@ -11,11 +11,34 @@ const CONFIG = {
     stageDuration: 1800, // 30秒（60fps * 30）
     bossHp: 500,
     bossAttackSpeed: 3,
-    scenesCSV: 'scenes.csv'
+    scenesCSV: 'scenes.csv',
+    // プレイヤーグラフィック設定
+    playerGraphic: 'images/player.mp4',  // .mp4, .gif, .png に対応
+    playerGraphicType: 'mp4'  // 'mp4', 'gif', 'png'
 };
 
 // シーンデータ（CSVから読み込む）
 let scenesData = [];
+
+// プレイヤーグラフィックリソース
+let playerGraphicElement = null;
+
+// プレイヤーグラフィックの初期化
+function initPlayerGraphic() {
+    if (CONFIG.playerGraphicType === 'mp4') {
+        // MP4動画の場合
+        playerGraphicElement = document.createElement('video');
+        playerGraphicElement.src = CONFIG.playerGraphic;
+        playerGraphicElement.loop = true;
+        playerGraphicElement.muted = true;
+        playerGraphicElement.autoplay = true;
+        playerGraphicElement.play();
+    } else {
+        // GIF/PNGの場合
+        playerGraphicElement = new Image();
+        playerGraphicElement.src = CONFIG.playerGraphic;
+    }
+}
 
 // ゲーム状態
 let gameState = {
@@ -58,20 +81,45 @@ class Player {
     }
 
     draw(ctx) {
-        // プレイヤーを青い三角形で描画
-        ctx.fillStyle = '#4ecdc4';
-        ctx.beginPath();
-        ctx.moveTo(this.x, this.y - this.height / 2);
-        ctx.lineTo(this.x - this.width / 2, this.y + this.height / 2);
-        ctx.lineTo(this.x + this.width / 2, this.y + this.height / 2);
-        ctx.closePath();
-        ctx.fill();
+        // プレイヤーグラフィックを描画
+        let graphicReady = false;
+
+        if (playerGraphicElement) {
+            if (CONFIG.playerGraphicType === 'mp4') {
+                // MP4動画の場合：readyStateをチェック
+                graphicReady = playerGraphicElement.readyState >= 2; // HAVE_CURRENT_DATA以上
+            } else {
+                // GIF/PNGの場合：completeをチェック
+                graphicReady = playerGraphicElement.complete && playerGraphicElement.naturalWidth > 0;
+            }
+        }
+
+        if (graphicReady) {
+            // グラフィック（動画/GIF/PNG）を描画
+            ctx.drawImage(
+                playerGraphicElement,
+                this.x - this.width / 2,
+                this.y - this.height / 2,
+                this.width,
+                this.height
+            );
+        } else {
+            // フォールバック：青い三角形で描画
+            ctx.fillStyle = '#4ecdc4';
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y - this.height / 2);
+            ctx.lineTo(this.x - this.width / 2, this.y + this.height / 2);
+            ctx.lineTo(this.x + this.width / 2, this.y + this.height / 2);
+            ctx.closePath();
+            ctx.fill();
+        }
 
         // 兵士数を表示
         ctx.fillStyle = 'white';
         ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(`x${gameState.soldiers}`, this.x, this.y + this.height);
+        ctx.textBaseline = 'top';
+        ctx.fillText(`x${gameState.soldiers}`, this.x, this.y + this.height / 2 + 5);
     }
 
     move(direction) {
@@ -903,8 +951,9 @@ document.getElementById('restart-button').addEventListener('click', () => {
     nextStage();
 });
 
-// ページ読み込み時にCSVを読み込む
+// ページ読み込み時にCSVとプレイヤーグラフィックを読み込む
 window.addEventListener('load', async () => {
     await loadScenes();
+    initPlayerGraphic();
     console.log('ゲーム読み込み完了！');
 });
