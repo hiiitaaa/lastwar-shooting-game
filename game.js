@@ -10,7 +10,7 @@ const CONFIG = {
     soldierGaugeSpawnRate: 180,
     stageDuration: 1800, // 30秒（60fps * 30）
     bossHp: 500,
-    bossAttackSpeed: 3,
+    bossAttackSpeed: 2.5, // 降下速度を遅く（3→2.5）
     scenesCSV: 'scenes.csv',
     // プレイヤーグラフィック設定
     playerGraphic: 'images/player.webm',  // .mov, .webm, .mp4, .gif, .png に対応
@@ -26,7 +26,11 @@ const CONFIG = {
     // 弾の画像設定
     bulletImage: 'images/bullet.png',  // null で四角形
     bulletWidth: 20,   // 弾の横幅（ピクセル）
-    bulletHeight: 20   // 弾の縦幅（ピクセル）
+    bulletHeight: 20,  // 弾の縦幅（ピクセル）
+    // エフェクト画像設定
+    hitEffectImage: 'images/hit-effect.png',
+    hitEffectSmallSize: 30,  // 着弾時のサイズ（ピクセル）
+    hitEffectLargeSize: 80   // 破壊時のサイズ（ピクセル）
 };
 
 // シーンデータ（CSVから読み込む）
@@ -47,6 +51,9 @@ let characterIconImages = {
 
 // 弾の画像リソース
 let bulletImage = null;
+
+// エフェクト画像リソース
+let hitEffectImage = null;
 
 // プレイヤーグラフィックの初期化
 function initPlayerGraphic() {
@@ -102,6 +109,7 @@ let obstacles = []; // 障害物（数字付き）
 let soldierGauges = []; // 青いゲージ（兵士数増加）
 let boss = null;
 let soldierSpawnEffects = []; // 兵士増加エフェクト
+let hitEffects = []; // 着弾・破壊エフェクト
 
 // プレイヤークラス
 class Player {
@@ -416,7 +424,9 @@ class Obstacle {
             // 撃破履歴に追加（最初に倒したもの優先のため）
             gameState.itemHistory.push(this.characterType);
             gameState.score += this.maxHp * 5;
+            return true; // 破壊された
         }
+        return false; // まだ生きている
     }
 }
 
@@ -546,6 +556,44 @@ class SoldierSpawnEffect {
     }
 }
 
+// 着弾・破壊エフェクトクラス
+class HitEffect {
+    constructor(x, y, isDestroy = false) {
+        this.x = x;
+        this.y = y;
+        this.size = isDestroy ? CONFIG.hitEffectLargeSize : CONFIG.hitEffectSmallSize;
+        this.opacity = 1.0;
+        this.life = 0;
+        this.maxLife = 30; // 0.5秒（60fps）
+        this.active = true;
+    }
+
+    update() {
+        this.life++;
+        // フェードアウト
+        this.opacity = 1.0 - (this.life / this.maxLife);
+
+        if (this.life >= this.maxLife) {
+            this.active = false;
+        }
+    }
+
+    draw(ctx) {
+        if (hitEffectImage && hitEffectImage.complete) {
+            ctx.save();
+            ctx.globalAlpha = this.opacity;
+            ctx.drawImage(
+                hitEffectImage,
+                this.x - this.size / 2,
+                this.y - this.size / 2,
+                this.size,
+                this.size
+            );
+            ctx.restore();
+        }
+    }
+}
+
 // ボスクラス
 class Boss {
     constructor(characterType) {
@@ -654,8 +702,9 @@ class Boss {
     startAttack() {
         this.isAttacking = true;
         this.returning = false;
-        // プレイヤーのX座標に向かう
-        this.x = player.x;
+        // プレイヤーのX座標に向かう（ランダムオフセットで避けやすく）
+        const offset = (Math.random() - 0.5) * 120; // -60 ~ +60のランダムオフセット
+        this.x = Math.max(this.width / 2, Math.min(CONFIG.canvasWidth - this.width / 2, player.x + offset));
         this.attackTargetY = CONFIG.canvasHeight - 150; // プレイヤーの少し上まで降下
     }
 
@@ -664,7 +713,9 @@ class Boss {
         if (this.hp <= 0) {
             this.active = false;
             gameState.score += 1000;
+            return true; // 撃破された
         }
+        return false; // まだ生きている
     }
 
     checkPlayerCollision(player) {
@@ -818,9 +869,9 @@ function gameLoop() {
     ctx.stroke();
     ctx.setLineDash([]); // 点線をリセット
 
-    // ボス戦開始判定（ステージの2/3経過後、20秒 = 1200フレーム）
+    // ボス戦開始判定（ステージ1以降のみ、ステージの2/3経過後）
     const bossStartTime = Math.floor(CONFIG.stageDuration * 0.67); // 20秒
-    if (gameState.frame === bossStartTime && !gameState.isBossBattle) {
+    if (gameState.currentStage > 0 && gameState.frame === bossStartTime && !gameState.isBossBattle) {
         gameState.isBossBattle = true;
         // ボス出現
         const route = gameState.storyRoute || 'sister';
@@ -873,7 +924,16 @@ function gameLoop() {
         obstacles.forEach(obstacle => {
             if (bullet.active && obstacle.active && checkCollision(bullet, obstacle)) {
                 bullet.active = false;
-                obstacle.takeDamage();
+                const isDestroyed = obstacle.takeDamage();
+
+                // エフェクト生成
+                if (isDestroyed) {
+                    // 破壊エフェクト（大）
+                    hitEffects.push(new HitEffect(obstacle.x, obstacle.y, true));
+                } else {
+                    // 着弾エフェクト（小）
+                    hitEffects.push(new HitEffect(bullet.x, bullet.y, false));
+                }
             }
         });
     });
@@ -932,6 +992,13 @@ function gameLoop() {
         bullet.draw(ctx);
     });
 
+    // エフェクトの更新と描画
+    hitEffects = hitEffects.filter(effect => effect.active);
+    hitEffects.forEach(effect => {
+        effect.update();
+        effect.draw(ctx);
+    });
+
     // ボスの更新と描画
     if (gameState.isBossBattle && boss && boss.active) {
         boss.update(player);
@@ -941,13 +1008,22 @@ function gameLoop() {
         bullets.forEach(bullet => {
             if (bullet.active && checkCollision(bullet, boss)) {
                 bullet.active = false;
-                boss.takeDamage();
+                const isDestroyed = boss.takeDamage();
+
+                // エフェクト生成
+                if (isDestroyed) {
+                    // 撃破エフェクト（大）
+                    hitEffects.push(new HitEffect(boss.x, boss.y, true));
+                } else {
+                    // 着弾エフェクト（小）
+                    hitEffects.push(new HitEffect(bullet.x, bullet.y, false));
+                }
             }
         });
 
         // プレイヤー本体とボスの衝突判定
         if (checkCollision(player, boss)) {
-            const damage = 10; // ボスとの接触ダメージ
+            const damage = 3; // ボスとの接触ダメージ（10→3に減少）
             gameState.soldiers = Math.max(1, gameState.soldiers - damage);
             flashScreen();
         }
@@ -1264,6 +1340,7 @@ function startGame() {
     obstacles = [];
     soldierGauges = [];
     boss = null;
+    hitEffects = [];
 
     // ゲームループ開始
     gameLoop();
@@ -1425,6 +1502,12 @@ window.addEventListener('load', async () => {
     if (CONFIG.bulletImage) {
         bulletImage = new Image();
         bulletImage.src = CONFIG.bulletImage;
+    }
+
+    // エフェクト画像を読み込み
+    if (CONFIG.hitEffectImage) {
+        hitEffectImage = new Image();
+        hitEffectImage.src = CONFIG.hitEffectImage;
     }
 
     console.log('ゲーム読み込み完了！');
