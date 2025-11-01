@@ -13,8 +13,8 @@ const CONFIG = {
     bossAttackSpeed: 3,
     scenesCSV: 'scenes.csv',
     // プレイヤーグラフィック設定
-    playerGraphic: 'images/player.mov',  // .mov, .webm, .mp4, .gif, .png に対応
-    playerGraphicType: 'mov'  // 'mov', 'webm', 'mp4', 'gif', 'png'
+    playerGraphic: 'images/player.gif',  // .mov, .webm, .mp4, .gif, .png に対応
+    playerGraphicType: 'gif'  // 'mov', 'webm', 'mp4', 'gif', 'png'
 };
 
 // シーンデータ（CSVから読み込む）
@@ -96,6 +96,13 @@ class Player {
             if (videoFormats.includes(CONFIG.playerGraphicType)) {
                 // MOV/WebM/MP4動画の場合：readyStateをチェック
                 graphicReady = playerGraphicElement.readyState >= 2; // HAVE_CURRENT_DATA以上
+
+                // デバッグ: 動画の状態を表示（初回のみ）
+                if (!this.videoDebugLogged) {
+                    console.log('Player video readyState:', playerGraphicElement.readyState);
+                    console.log('Player video error:', playerGraphicElement.error);
+                    this.videoDebugLogged = true;
+                }
             } else {
                 // GIF/PNGの場合：completeをチェック
                 graphicReady = playerGraphicElement.complete && playerGraphicElement.naturalWidth > 0;
@@ -121,6 +128,14 @@ class Player {
 
         if (!graphicReady) {
             // フォールバック：青い三角形で描画
+            // デバッグ: プレイヤー座標を表示（初回のみ）
+            if (!this.posDebugLogged) {
+                console.log('Player position:', this.x, this.y);
+                console.log('Player size:', this.width, this.height);
+                console.log('Canvas size:', CONFIG.canvasWidth, CONFIG.canvasHeight);
+                this.posDebugLogged = true;
+            }
+
             ctx.save();
             ctx.fillStyle = '#4ecdc4';
             ctx.strokeStyle = '#2ecc71';
