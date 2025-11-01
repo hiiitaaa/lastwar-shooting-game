@@ -13,8 +13,8 @@ const CONFIG = {
     bossAttackSpeed: 3,
     scenesCSV: 'scenes.csv',
     // プレイヤーグラフィック設定
-    playerGraphic: 'images/player.gif',  // .mov, .webm, .mp4, .gif, .png に対応
-    playerGraphicType: 'gif'  // 'mov', 'webm', 'mp4', 'gif', 'png'
+    playerGraphic: 'images/player.webm',  // .mov, .webm, .mp4, .gif, .png に対応
+    playerGraphicType: 'webm'  // 'mov', 'webm', 'mp4', 'gif', 'png'
 };
 
 // シーンデータ（CSVから読み込む）
