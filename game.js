@@ -14,7 +14,19 @@ const CONFIG = {
     scenesCSV: 'scenes.csv',
     // プレイヤーグラフィック設定
     playerGraphic: 'images/player.webm',  // .mov, .webm, .mp4, .gif, .png に対応
-    playerGraphicType: 'webm'  // 'mov', 'webm', 'mp4', 'gif', 'png'
+    playerGraphicType: 'webm',  // 'mov', 'webm', 'mp4', 'gif', 'png'
+    // 背景画像設定
+    backgroundImage: 'images/background.png',  // null で単色背景
+    // キャラクターアイコン設定
+    characterIcons: {
+        sister: 'images/sister-icon.png',
+        olderSister: 'images/older-sister-icon.png',
+        mother: 'images/mother-icon.png'
+    },
+    // 弾の画像設定
+    bulletImage: 'images/bullet.png',  // null で四角形
+    bulletWidth: 20,   // 弾の横幅（ピクセル）
+    bulletHeight: 20   // 弾の縦幅（ピクセル）
 };
 
 // シーンデータ（CSVから読み込む）
@@ -22,6 +34,19 @@ let scenesData = [];
 
 // プレイヤーグラフィックリソース
 let playerGraphicElement = null;
+
+// 背景画像リソース
+let backgroundImage = null;
+
+// キャラクターアイコン画像リソース
+let characterIconImages = {
+    sister: null,
+    olderSister: null,
+    mother: null
+};
+
+// 弾の画像リソース
+let bulletImage = null;
 
 // プレイヤーグラフィックの初期化
 function initPlayerGraphic() {
@@ -46,6 +71,7 @@ function initPlayerGraphic() {
 // ゲーム状態
 let gameState = {
     screen: 'start', // 'start', 'game', 'novel', 'video', 'reward', 'menu'
+    gameMode: 'story', // 'story'=ストーリーモード, 'gameonly'=ゲームオンリーモード
     score: 0,
     soldiers: 1,
     items: {
@@ -53,9 +79,10 @@ let gameState = {
         olderSister: 0,
         mother: 0
     },
-    itemHistory: [], // アイテム取得履歴（最初に取ったもの優先用）
+    itemHistory: [], // キャラ撃破履歴（最初に倒したもの優先用）
     currentStage: 0, // 0=チュートリアル, 1-3=各ルートのステージ
     storyRoute: null, // 'sister', 'olderSister', 'mother'
+    isBossBattle: false, // ボス戦フラグ
     frame: 0,
     canvas: null,
     ctx: null,
@@ -74,6 +101,7 @@ let bullets = [];
 let obstacles = []; // 障害物（数字付き）
 let soldierGauges = []; // 青いゲージ（兵士数増加）
 let boss = null;
+let soldierSpawnEffects = []; // 兵士増加エフェクト
 
 // プレイヤークラス
 class Player {
@@ -84,6 +112,64 @@ class Player {
         this.height = 120; // 40 → 120（3倍）
         this.speed = CONFIG.playerSpeed;
         this.shootCooldown = 0;
+        this.soldierPositions = []; // 兵士の位置配列
+    }
+
+    // 兵士の位置を計算
+    // ルール: 1人目=本体, 2-6人目=横並び, 7-11人目=上段, 12-16人目=下段, 17-21人目=上段2, ...
+    calculateSoldierPositions() {
+        this.soldierPositions = [];
+        const soldierCount = gameState.soldiers;
+
+        if (soldierCount <= 1) return; // プレイヤー本体のみ
+
+        const soldierSize = 40; // 兵士1人のサイズ
+        const spacing = 45; // 間隔
+
+        // プレイヤー以外の兵士（soldierCount - 1人）を配置
+        for (let i = 0; i < soldierCount - 1; i++) {
+            let offsetX = 0;
+            let offsetY = 0;
+
+            // どの段か（0=横並び, 1=上段, 2=下段, 3=上段2, 4=下段2, ...）
+            const tier = Math.floor(i / 5);
+            // 段内での位置（0-4）
+            const posInTier = i % 5;
+
+            // 左右配置パターン（右→左→右2→左2→中央）
+            if (posInTier === 0) {
+                offsetX = spacing; // 右
+            } else if (posInTier === 1) {
+                offsetX = -spacing; // 左
+            } else if (posInTier === 2) {
+                offsetX = spacing * 2; // 右2
+            } else if (posInTier === 3) {
+                offsetX = -spacing * 2; // 左2
+            } else if (posInTier === 4) {
+                offsetX = 0; // 中央
+            }
+
+            // Y軸オフセット（段ごと: 横→上→下→上2→下2→...）
+            if (tier === 0) {
+                offsetY = 0; // 横並び（プレイヤーと同じ高さ）
+            } else {
+                // tier=1,3,5,7... は上段
+                // tier=2,4,6,8... は下段
+                const level = Math.floor((tier + 1) / 2); // 何段目か（1, 2, 3...）
+                if (tier % 2 === 1) {
+                    offsetY = -spacing * level; // 上段
+                } else {
+                    offsetY = spacing * level; // 下段
+                }
+            }
+
+            this.soldierPositions.push({
+                x: this.x + offsetX,
+                y: this.y + offsetY,
+                width: soldierSize,
+                height: soldierSize
+            });
+        }
     }
 
     draw(ctx) {
@@ -151,6 +237,34 @@ class Player {
             ctx.restore();
         }
 
+        // 兵士を描画
+        this.calculateSoldierPositions();
+        this.soldierPositions.forEach(soldier => {
+            if (playerGraphicElement && graphicReady) {
+                ctx.drawImage(
+                    playerGraphicElement,
+                    soldier.x - soldier.width / 2,
+                    soldier.y - soldier.height / 2,
+                    soldier.width,
+                    soldier.height
+                );
+            } else {
+                // フォールバック: 小さい三角形
+                ctx.save();
+                ctx.fillStyle = '#4ecdc4';
+                ctx.strokeStyle = '#2ecc71';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(soldier.x, soldier.y - soldier.height / 2);
+                ctx.lineTo(soldier.x - soldier.width / 2, soldier.y + soldier.height / 2);
+                ctx.lineTo(soldier.x + soldier.width / 2, soldier.y + soldier.height / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+            }
+        });
+
         // 兵士数を表示
         ctx.fillStyle = 'white';
         ctx.font = 'bold 16px Arial';
@@ -198,16 +312,27 @@ class Bullet {
     constructor(x, y) {
         this.x = x;
         this.y = y;
-        this.width = 8; // 少し大きく
-        this.height = 20; // 少し大きく
+        this.width = CONFIG.bulletWidth || 20;   // 設定から読み込み
+        this.height = CONFIG.bulletHeight || 20; // 設定から読み込み
         this.speed = CONFIG.bulletSpeed;
         this.active = true;
     }
 
     draw(ctx) {
-        ctx.fillStyle = '#ffe66d';
-        // 中心座標ベースで描画
-        ctx.fillRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
+        // 弾の画像を描画
+        if (bulletImage && bulletImage.complete) {
+            ctx.drawImage(
+                bulletImage,
+                this.x - this.width / 2,
+                this.y - this.height / 2,
+                this.width,
+                this.height
+            );
+        } else {
+            // フォールバック: 黄色の四角形
+            ctx.fillStyle = '#ffe66d';
+            ctx.fillRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
+        }
     }
 
     update() {
@@ -218,9 +343,9 @@ class Bullet {
     }
 }
 
-// 障害物クラス（数字付き）
+// 障害物クラス（キャラアイコン付き）
 class Obstacle {
-    constructor(x, y, hp, rewardType) {
+    constructor(x, y, hp, characterType) {
         this.x = x;
         this.y = y;
         this.width = 350; // レーン幅いっぱい
@@ -229,51 +354,50 @@ class Obstacle {
         this.active = true;
         this.maxHp = hp;
         this.hp = hp;
-        this.rewardType = rewardType; // 'sister', 'olderSister', 'mother', null
-        this.hasReward = rewardType !== null;
+        this.characterType = characterType; // 'sister', 'olderSister', 'mother'
     }
 
     draw(ctx) {
-        // 障害物本体（赤）
-        ctx.fillStyle = '#ff4757';
-        ctx.fillRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
-
-        // 枠線を追加
-        ctx.strokeStyle = '#c0392b';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
-
-        // HP数字を大きく表示
-        ctx.fillStyle = 'white';
-        ctx.font = 'bold 48px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(this.hp, this.x, this.y + 20);
-
-        // 報酬アイテムを上に表示
-        if (this.hasReward && this.rewardType) {
+        // キャラアイコン画像を背景に表示
+        const iconImage = characterIconImages[this.characterType];
+        if (iconImage && iconImage.complete) {
+            ctx.drawImage(
+                iconImage,
+                this.x - this.width / 2,
+                this.y - this.height / 2,
+                this.width,
+                this.height
+            );
+        } else {
+            // フォールバック: 色付き四角形
             const colors = {
                 sister: '#ff6b9d',
                 olderSister: '#4ecdc4',
                 mother: '#ffe66d'
             };
-            const labels = {
-                sister: '妹',
-                olderSister: '姉',
-                mother: '母'
-            };
-
-            // 報酬アイコン（大きく）
-            ctx.fillStyle = colors[this.rewardType];
-            ctx.beginPath();
-            ctx.arc(this.x, this.y - this.height / 2 - 25, 20, 0, Math.PI * 2);
-            ctx.fill();
-
-            // 文字
-            ctx.fillStyle = this.rewardType === 'mother' ? '#333' : 'white';
-            ctx.font = 'bold 18px Arial';
-            ctx.fillText(labels[this.rewardType], this.x, this.y - this.height / 2 - 25);
+            ctx.fillStyle = colors[this.characterType];
+            ctx.fillRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
         }
+
+        // 枠線を追加
+        ctx.strokeStyle = '#c0392b';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
+
+        // HP数字を上部に大きく表示（背景なし）
+        ctx.save();
+        // 白い縁取り
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 4;
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeText(this.hp, this.x, this.y - this.height / 2 - 15);
+
+        // HP数字（白）
+        ctx.fillStyle = 'white';
+        ctx.fillText(this.hp, this.x, this.y - this.height / 2 - 15);
+        ctx.restore();
     }
 
     update() {
@@ -287,12 +411,10 @@ class Obstacle {
         this.hp--;
         if (this.hp <= 0) {
             this.active = false;
-            // 報酬アイテム取得
-            if (this.hasReward && this.rewardType) {
-                gameState.items[this.rewardType]++;
-                // 取得履歴に追加（最初に取ったもの優先のため）
-                gameState.itemHistory.push(this.rewardType);
-            }
+            // キャラ撃破数をカウント
+            gameState.items[this.characterType]++;
+            // 撃破履歴に追加（最初に倒したもの優先のため）
+            gameState.itemHistory.push(this.characterType);
             gameState.score += this.maxHp * 5;
         }
     }
@@ -342,14 +464,96 @@ class SoldierGauge {
     }
 }
 
+// 兵士増加エフェクトクラス
+class SoldierSpawnEffect {
+    constructor(baseX, baseY, count) {
+        this.soldiers = [];
+        const spacing = 40; // キャラクター間の間隔
+        const startX = baseX - (count - 1) * spacing / 2; // 中央揃え
+
+        // 増加した兵士の数だけキャラを横一列に生成
+        for (let i = 0; i < count; i++) {
+            this.soldiers.push({
+                x: startX + i * spacing,
+                y: baseY - 80, // プレイヤーの少し上
+                startY: baseY - 80,
+                opacity: 0,
+                life: 0
+            });
+        }
+
+        this.active = true;
+        this.maxLife = 90; // 1.5秒
+    }
+
+    update() {
+        this.soldiers.forEach(soldier => {
+            soldier.life++;
+
+            // フェードイン＆上昇
+            if (soldier.life < 20) {
+                soldier.opacity = soldier.life / 20;
+            } else if (soldier.life > this.maxLife - 20) {
+                soldier.opacity = (this.maxLife - soldier.life) / 20;
+            } else {
+                soldier.opacity = 1;
+            }
+
+            // 上昇
+            soldier.y = soldier.startY - soldier.life * 0.5;
+        });
+
+        // 終了判定
+        if (this.soldiers[0].life >= this.maxLife) {
+            this.active = false;
+        }
+    }
+
+    draw(ctx) {
+        this.soldiers.forEach(soldier => {
+            ctx.save();
+            ctx.globalAlpha = soldier.opacity;
+
+            // キャラ描画
+            const size = 40; // サイズ
+
+            if (playerGraphicElement) {
+                const videoFormats = ['mov', 'webm', 'mp4'];
+
+                if (videoFormats.includes(CONFIG.playerGraphicType) && playerGraphicElement.readyState >= 2) {
+                    ctx.drawImage(
+                        playerGraphicElement,
+                        soldier.x - size / 2,
+                        soldier.y - size / 2,
+                        size,
+                        size
+                    );
+                } else if (CONFIG.playerGraphicType === 'gif' || CONFIG.playerGraphicType === 'png') {
+                    if (playerGraphicElement.complete) {
+                        ctx.drawImage(
+                            playerGraphicElement,
+                            soldier.x - size / 2,
+                            soldier.y - size / 2,
+                            size,
+                            size
+                        );
+                    }
+                }
+            }
+
+            ctx.restore();
+        });
+    }
+}
+
 // ボスクラス
 class Boss {
-    constructor() {
+    constructor(characterType) {
         this.x = CONFIG.canvasWidth / 2;
         this.y = 100;
         this.initialY = 100;
-        this.width = 120;
-        this.height = 120;
+        this.width = 240; // 障害物の2倍（350の約70%）
+        this.height = 240;
         this.maxHp = CONFIG.bossHp;
         this.hp = CONFIG.bossHp;
         this.active = true;
@@ -359,20 +563,35 @@ class Boss {
         this.attackCooldown = 0;
         this.attackTargetY = 0;
         this.returning = false;
+        this.characterType = characterType; // 'sister', 'olderSister', 'mother'
     }
 
     draw(ctx) {
-        // ボス本体（大きな赤い四角）
-        ctx.fillStyle = this.isAttacking ? '#e74c3c' : '#c0392b';
-        ctx.fillRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
+        // キャラアイコン画像を2倍サイズで表示
+        const iconImage = characterIconImages[this.characterType];
+        if (iconImage && iconImage.complete) {
+            ctx.drawImage(
+                iconImage,
+                this.x - this.width / 2,
+                this.y - this.height / 2,
+                this.width,
+                this.height
+            );
+        } else {
+            // フォールバック: 色付き四角形
+            const colors = {
+                sister: '#ff6b9d',
+                olderSister: '#4ecdc4',
+                mother: '#ffe66d'
+            };
+            ctx.fillStyle = colors[this.characterType];
+            ctx.fillRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
+        }
 
-        // ボスの顔
-        ctx.fillStyle = '#000';
-        // 目
-        ctx.fillRect(this.x - 30, this.y - 15, 15, 15);
-        ctx.fillRect(this.x + 15, this.y - 15, 15, 15);
-        // 口
-        ctx.fillRect(this.x - 25, this.y + 20, 50, 10);
+        // 枠線（攻撃時は赤く）
+        ctx.strokeStyle = this.isAttacking ? '#e74c3c' : '#c0392b';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
 
         // HPバー
         const hpBarWidth = 150;
@@ -524,14 +743,18 @@ function spawnObstacle() {
 
     const hp = Math.floor(Math.random() * (maxHp - minHp + 1)) + minHp;
 
-    // 50%の確率で報酬アイテム付き
-    let rewardType = null;
-    if (Math.random() < 0.5) {
+    // キャラクタータイプの決定
+    let characterType;
+    if (gameState.currentStage === 0) {
+        // チュートリアル：ランダムに3種類出現
         const types = ['sister', 'olderSister', 'mother'];
-        rewardType = types[Math.floor(Math.random() * types.length)];
+        characterType = types[Math.floor(Math.random() * types.length)];
+    } else {
+        // 分岐後：選択されたキャラのみ出現
+        characterType = gameState.storyRoute || 'sister';
     }
 
-    obstacles.push(new Obstacle(x, y, hp, rewardType));
+    obstacles.push(new Obstacle(x, y, hp, characterType));
 }
 
 // 兵士ゲージのスポーン（左右のレーンから）
@@ -576,8 +799,14 @@ function gameLoop() {
     ctx.clearRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
 
     // 背景
-    ctx.fillStyle = '#0f0f1e';
-    ctx.fillRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+    if (backgroundImage && backgroundImage.complete) {
+        // 背景画像を画面全体に描画
+        ctx.drawImage(backgroundImage, 0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+    } else {
+        // 画像がない場合は単色背景
+        ctx.fillStyle = '#0f0f1e';
+        ctx.fillRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+    }
 
     // 画面中央の分割線（縦2分割）
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
@@ -589,20 +818,40 @@ function gameLoop() {
     ctx.stroke();
     ctx.setLineDash([]); // 点線をリセット
 
-    // ステージクリア判定
-    if (gameState.frame >= CONFIG.stageDuration) {
+    // ボス戦開始判定（ステージの2/3経過後、20秒 = 1200フレーム）
+    const bossStartTime = Math.floor(CONFIG.stageDuration * 0.67); // 20秒
+    if (gameState.frame === bossStartTime && !gameState.isBossBattle) {
+        gameState.isBossBattle = true;
+        // ボス出現
+        const route = gameState.storyRoute || 'sister';
+        boss = new Boss(route);
+        // 障害物と青ゲージをクリア
+        obstacles = [];
+        soldierGauges = [];
+    }
+
+    // ボス撃破でステージクリア
+    if (gameState.isBossBattle && boss && !boss.active) {
         stageComplete();
         return;
     }
 
-    // 障害物と兵士ゲージのスポーン
+    // 通常時間でのステージクリア（ボス出現前にタイムアップ）
+    if (gameState.frame >= CONFIG.stageDuration && !gameState.isBossBattle) {
+        stageComplete();
+        return;
+    }
+
     gameState.frame++;
 
-    if (gameState.frame % CONFIG.obstacleSpawnRate === 0) {
-        spawnObstacle();
-    }
-    if (gameState.frame % CONFIG.soldierGaugeSpawnRate === 0) {
-        spawnSoldierGauge();
+    // ボス戦中は障害物と兵士ゲージをスポーンしない
+    if (!gameState.isBossBattle) {
+        if (gameState.frame % CONFIG.obstacleSpawnRate === 0) {
+            spawnObstacle();
+        }
+        if (gameState.frame % CONFIG.soldierGaugeSpawnRate === 0) {
+            spawnSoldierGauge();
+        }
     }
 
     // 障害物の更新と描画
@@ -636,20 +885,41 @@ function gameLoop() {
         }
     });
 
-    // 衝突判定: プレイヤーと障害物（ダメージ）
+    // 衝突判定: プレイヤー本体と障害物（ダメージ）
     obstacles.forEach(obstacle => {
-        if (obstacle.active && checkCollision(player, obstacle)) {
-            // 障害物のHPだけ兵士数を減らす
+        if (!obstacle.active) return;
+
+        // プレイヤー本体との衝突
+        if (checkCollision(player, obstacle)) {
             const damage = obstacle.hp;
             gameState.soldiers = Math.max(1, gameState.soldiers - damage);
-
-            // 障害物を破壊
             obstacle.active = false;
-
-            // 視覚的フィードバック（画面を赤く点滅）
             flashScreen();
+            return;
         }
+
+        // 兵士との衝突判定
+        player.soldierPositions.forEach(soldier => {
+            if (obstacle.active && checkCollision(soldier, obstacle)) {
+                // 兵士1人を失う
+                gameState.soldiers--;
+                obstacle.active = false;
+                flashScreen();
+
+                // ゲームオーバーチェック
+                if (gameState.soldiers <= 0) {
+                    gameOver();
+                    return;
+                }
+            }
+        });
     });
+
+    // ゲームオーバーチェック
+    if (gameState.soldiers <= 0) {
+        gameOver();
+        return;
+    }
 
     // プレイヤーの更新と描画
     player.update();
@@ -661,6 +931,35 @@ function gameLoop() {
         bullet.update();
         bullet.draw(ctx);
     });
+
+    // ボスの更新と描画
+    if (gameState.isBossBattle && boss && boss.active) {
+        boss.update(player);
+        boss.draw(ctx);
+
+        // 弾とボスの衝突判定
+        bullets.forEach(bullet => {
+            if (bullet.active && checkCollision(bullet, boss)) {
+                bullet.active = false;
+                boss.takeDamage();
+            }
+        });
+
+        // プレイヤー本体とボスの衝突判定
+        if (checkCollision(player, boss)) {
+            const damage = 10; // ボスとの接触ダメージ
+            gameState.soldiers = Math.max(1, gameState.soldiers - damage);
+            flashScreen();
+        }
+
+        // 兵士とボスの衝突判定
+        player.soldierPositions.forEach(soldier => {
+            if (checkCollision(soldier, boss)) {
+                gameState.soldiers = Math.max(1, gameState.soldiers - 1);
+                flashScreen();
+            }
+        });
+    }
 
     // UI更新
     updateUI();
@@ -682,8 +981,63 @@ function stageComplete() {
         determineRoute();
     }
 
-    // ノベルシーン開始
+    // ゲームオンリーモード：ノベルシーンをスキップして次のステージへ
+    if (gameState.gameMode === 'gameonly') {
+        console.log('ゲームオンリーモード：ノベルシーンをスキップ');
+        // リワード画面を表示せずに次のステージへ
+        gameState.currentStage++;
+
+        // 最後のステージ（3）をクリアしたらエンディング
+        if (gameState.currentStage > 3) {
+            console.log('全ステージクリア！');
+            showReward(); // 最後だけリワード画面表示
+            return;
+        }
+
+        // 次のステージを開始
+        startGame();
+        return;
+    }
+
+    // ストーリーモード：ノベルシーン開始
     startNovelScene();
+}
+
+// ゲームオーバー処理
+function gameOver() {
+    console.log('Game Over!');
+
+    // ルートが決まっていない場合は決定
+    if (!gameState.storyRoute) {
+        determineRoute();
+    }
+
+    // バッドエンドシーンを表示
+    showBadEnding();
+}
+
+// バッドエンド表示
+function showBadEnding() {
+    document.getElementById('game-screen').style.display = 'none';
+
+    // バッドエンドシーンをCSVから読み込んで表示
+    const route = gameState.storyRoute || 'sister';
+    gameState.currentScenes = scenesData.filter(scene =>
+        scene.route === route && scene.stage === -1 // stage=-1はバッドエンド
+    );
+
+    if (gameState.currentScenes.length === 0) {
+        // バッドエンドシーンがない場合のフォールバック
+        console.warn('バッドエンドシーンが見つかりません。リワード画面を表示します。');
+        showReward();
+        return;
+    }
+
+    gameState.currentSceneIndex = 0;
+    gameState.screen = 'novel';
+
+    document.getElementById('novel-screen').style.display = 'flex';
+    displayCurrentScene();
 }
 
 // ストーリールート決定（最初に取ったアイテム優先）
@@ -895,6 +1249,7 @@ function startGame() {
 
     gameState.frame = 0;
     gameState.flashTimer = 0;
+    gameState.isBossBattle = false;
 
     // キャンバス設定
     const canvas = document.getElementById('game-canvas');
@@ -908,6 +1263,7 @@ function startGame() {
     bullets = [];
     obstacles = [];
     soldierGauges = [];
+    boss = null;
 
     // ゲームループ開始
     gameLoop();
@@ -1019,7 +1375,19 @@ function goHome() {
 }
 
 // ボタンイベント
-document.getElementById('start-button').addEventListener('click', startGame);
+// モード選択ボタン
+document.getElementById('story-mode-button').addEventListener('click', () => {
+    gameState.gameMode = 'story';
+    console.log('ストーリーモード選択');
+    startGame();
+});
+
+document.getElementById('game-only-mode-button').addEventListener('click', () => {
+    gameState.gameMode = 'gameonly';
+    console.log('ゲームオンリーモード選択');
+    startGame();
+});
+
 document.getElementById('restart-button').addEventListener('click', () => {
     // リワード画面のボタンを「次へ」に変更
     nextStage();
@@ -1036,5 +1404,28 @@ document.getElementById('home-button').addEventListener('click', goHome);
 window.addEventListener('load', async () => {
     await loadScenes();
     initPlayerGraphic();
+
+    // 背景画像の読み込み
+    if (CONFIG.backgroundImage) {
+        backgroundImage = new Image();
+        backgroundImage.src = CONFIG.backgroundImage;
+    }
+
+    // キャラクターアイコン画像の読み込み
+    characterIconImages.sister = new Image();
+    characterIconImages.sister.src = CONFIG.characterIcons.sister;
+
+    characterIconImages.olderSister = new Image();
+    characterIconImages.olderSister.src = CONFIG.characterIcons.olderSister;
+
+    characterIconImages.mother = new Image();
+    characterIconImages.mother.src = CONFIG.characterIcons.mother;
+
+    // 弾の画像を読み込み
+    if (CONFIG.bulletImage) {
+        bulletImage = new Image();
+        bulletImage.src = CONFIG.bulletImage;
+    }
+
     console.log('ゲーム読み込み完了！');
 });

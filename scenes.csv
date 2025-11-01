@@ -72,3 +72,16 @@ mother,3,母,もっと…♡,videos/mother-3-part1.mp4,video
 mother,3,母,最後のとっておき,images/mother.jpg,image
 mother,3,母,んんっ…イっちゃう♡,videos/mother-3-part2.mp4,video
 mother,3,母,また…ね♡,videos/mother-3-part2.mp4,video
+sister,-1,妹,お兄ちゃん…,images/sister-bad.jpg,image
+sister,-1,妹,やられちゃったね…,images/sister-bad.jpg,image
+sister,-1,妹,もう会えなくなっちゃうの？,images/sister-bad.jpg,image
+sister,-1,妹,寂しいよ…,videos/sister-bad.mp4,video
+sister,-1,妹,もう一度、頑張ってみて？,images/sister-bad.jpg,image
+olderSister,-1,姉,あら…残念ね,images/older-sister-bad.jpg,image
+olderSister,-1,姉,力が足りなかったようね,images/older-sister-bad.jpg,image
+olderSister,-1,姉,これで終わりなんて寂しいわ,videos/older-sister-bad.mp4,video
+olderSister,-1,姉,また挑戦してくれる？,images/older-sister-bad.jpg,image
+mother,-1,母,あら…やられてしまったの,images/mother-bad.jpg,image
+mother,-1,母,まだ見せたいものがたくさんあったのに,images/mother-bad.jpg,image
+mother,-1,母,残念ね…,videos/mother-bad.mp4,video
+mother,-1,母,もう一度、頑張ってちょうだい,images/mother-bad.jpg,image

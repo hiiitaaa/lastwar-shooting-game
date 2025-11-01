@@ -69,6 +69,50 @@ body {
     transform: translateY(-1px);
 }
 
+/* モード選択 */
+.mode-selection {
+    margin-top: 40px;
+    width: 100%;
+    max-width: 500px;
+}
+
+.mode-selection h2 {
+    font-size: 1.8em;
+    margin-bottom: 20px;
+    color: #fff;
+}
+
+.mode-button {
+    width: 100%;
+    padding: 20px 30px;
+    margin: 10px 0;
+    font-size: 1.3em;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 3px solid transparent;
+    border-radius: 15px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.mode-button:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+    border-color: #fff;
+}
+
+.mode-button:active {
+    transform: translateY(-1px);
+}
+
+.mode-button small {
+    display: block;
+    margin-top: 5px;
+    font-size: 0.7em;
+    opacity: 0.8;
+}
+
 /* ゲーム画面 */
 #game-screen {
     width: 100%;
