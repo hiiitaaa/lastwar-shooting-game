@@ -630,6 +630,129 @@ sister,1,妹,お兄ちゃん…好き♡,videos/sister-1-part2.mp4,video
 
 ---
 
+## Phase 7: ゲームバランス調整とエフェクトシステム実装 (2025-11-01)
+
+### 7-1. ボス戦のゲームバランス調整
+
+ユーザーからのフィードバック：「ボスの攻撃でほぼゲームオーバーになる」
+
+**問題点**:
+- ボスの接触ダメージが10と高すぎた
+- 兵士数が10未満だと即死状態
+- ボスの降下攻撃が避けられない
+
+**実装した改善**:
+
+1. **接触ダメージの大幅減少** (game.js:950, 1019)
+   ```javascript
+   const damage = 3; // 10 → 3 に減少
+   ```
+   - ボスとの接触時のダメージを70%削減
+   - 兵士数が少なくてもゲームオーバーになりにくく
+
+2. **降下攻撃の回避性向上** (game.js:654-660)
+   ```javascript
+   // ランダムオフセット追加
+   const offset = (Math.random() - 0.5) * 120; // -60 ~ +60px
+   this.x = Math.max(this.width / 2, Math.min(CONFIG.canvasWidth - this.width / 2, player.x + offset));
+   ```
+   - プレイヤーの正確な位置ではなく、ランダムな位置に降下
+   - 完全回避が可能に
+
+3. **降下速度の減少** (game.js:13)
+   ```javascript
+   bossAttackSpeed: 2.5, // 3 → 2.5 に減少
+   ```
+   - 降下速度が遅くなり、反応時間が増加
+
+**改善効果**:
+- ボス戦の難易度が適正レベルに
+- プレイヤーのスキルで避けられるように
+- 兵士数を保ちやすくなった
+
+### 7-2. 着弾・破壊エフェクトシステムの実装
+
+ユーザー要望：「着弾時と破壊時にエフェクトを追加したい」
+
+**設計方針**:
+- 画像1枚でサイズを変えて表現
+- 着弾時 = 小サイズ
+- 破壊時 = 大サイズ
+- フェードアウトで消える
+
+**実装内容**:
+
+1. **CONFIG設定追加** (game.js:30-33)
+   ```javascript
+   hitEffectImage: 'images/hit-effect.png',
+   hitEffectSmallSize: 30,  // 着弾時のサイズ（ピクセル）
+   hitEffectLargeSize: 80   // 破壊時のサイズ（ピクセル）
+   ```
+
+2. **HitEffectクラス作成** (game.js:557-593)
+   ```javascript
+   class HitEffect {
+       constructor(x, y, isDestroy = false) {
+           this.size = isDestroy ? CONFIG.hitEffectLargeSize : CONFIG.hitEffectSmallSize;
+           this.opacity = 1.0;
+           this.maxLife = 30; // 0.5秒（60fps）
+       }
+
+       update() {
+           this.life++;
+           this.opacity = 1.0 - (this.life / this.maxLife); // フェードアウト
+       }
+   }
+   ```
+
+3. **エフェクト生成タイミング**:
+   - **着弾時** (game.js:933): 弾が障害物に当たった瞬間
+     ```javascript
+     hitEffects.push(new HitEffect(bullet.x, bullet.y, false));
+     ```
+   - **破壊時** (game.js:930, 1009): 障害物/ボスのHPが0になった瞬間
+     ```javascript
+     hitEffects.push(new HitEffect(obstacle.x, obstacle.y, true));
+     ```
+
+4. **ゲームループ統合** (game.js:995-1000)
+   ```javascript
+   hitEffects = hitEffects.filter(effect => effect.active);
+   hitEffects.forEach(effect => {
+       effect.update();
+       effect.draw(ctx);
+   });
+   ```
+
+5. **必要なアセット**:
+   - `images/hit-effect.png` - エフェクト画像（1枚）
+
+**技術的な工夫**:
+- takeDamage()メソッドが破壊判定を返すように変更（game.js:418-430, 711-719）
+- 障害物とボスの両方に対応
+- エフェクトの寿命管理（自動削除）
+
+### 7-3. ゲーム体験の向上
+
+**改善前**:
+- ボス戦で理不尽にゲームオーバー
+- 弾が当たっても視覚的フィードバックがない
+- 破壊の爽快感が薄い
+
+**改善後**:
+- ボス戦が適正難易度に（スキルで避けられる）
+- 着弾エフェクトで命中感が向上
+- 破壊時の大きなエフェクトで爽快感アップ
+
+## Phase 7で学んだこと
+
+1. **ゲームバランスの重要性**: 数値調整だけでプレイ体験が大きく変わる
+2. **視覚的フィードバック**: エフェクトがあるだけでゲームの手応えが向上
+3. **プレイヤーテスト**: 実際にプレイしないと分からない問題がある
+4. **段階的改善**: ダメージ減少 + 速度調整 + ランダム化の複合効果
+
+---
+
 作成日: 2025-10-31
 最終更新: 2025-11-01
 開発者: Claude (Anthropic) + User
