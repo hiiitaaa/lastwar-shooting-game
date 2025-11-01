@@ -45,7 +45,7 @@ function initPlayerGraphic() {
 
 // ゲーム状態
 let gameState = {
-    screen: 'start', // 'start', 'game', 'novel', 'video', 'reward'
+    screen: 'start', // 'start', 'game', 'novel', 'video', 'reward', 'menu'
     score: 0,
     soldiers: 1,
     items: {
@@ -62,7 +62,10 @@ let gameState = {
     flashTimer: 0,
     // ノベルシステム用
     currentScenes: [], // 現在のステージのシーン配列
-    currentSceneIndex: 0 // 現在表示中のシーンインデックス
+    currentSceneIndex: 0, // 現在表示中のシーンインデックス
+    // 一時停止用
+    paused: false,
+    previousScreen: null
 };
 
 // ゲームオブジェクト
@@ -101,29 +104,46 @@ class Player {
 
         if (graphicReady) {
             // グラフィック（動画/GIF/PNG）を描画
-            ctx.drawImage(
-                playerGraphicElement,
-                this.x - this.width / 2,
-                this.y - this.height / 2,
-                this.width,
-                this.height
-            );
-        } else {
+            try {
+                ctx.drawImage(
+                    playerGraphicElement,
+                    this.x - this.width / 2,
+                    this.y - this.height / 2,
+                    this.width,
+                    this.height
+                );
+            } catch (e) {
+                // 描画エラー時はフォールバック
+                console.warn('Player graphic draw error:', e);
+                graphicReady = false;
+            }
+        }
+
+        if (!graphicReady) {
             // フォールバック：青い三角形で描画
+            ctx.save();
             ctx.fillStyle = '#4ecdc4';
+            ctx.strokeStyle = '#2ecc71';
+            ctx.lineWidth = 3;
+
             ctx.beginPath();
             ctx.moveTo(this.x, this.y - this.height / 2);
             ctx.lineTo(this.x - this.width / 2, this.y + this.height / 2);
             ctx.lineTo(this.x + this.width / 2, this.y + this.height / 2);
             ctx.closePath();
             ctx.fill();
+            ctx.stroke();
+            ctx.restore();
         }
 
         // 兵士数を表示
         ctx.fillStyle = 'white';
-        ctx.font = 'bold 14px Arial';
+        ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.strokeText(`x${gameState.soldiers}`, this.x, this.y + this.height / 2 + 5);
         ctx.fillText(`x${gameState.soldiers}`, this.x, this.y + this.height / 2 + 5);
     }
 
@@ -530,7 +550,12 @@ function flashScreen() {
 
 // ゲームループ
 function gameLoop() {
-    if (gameState.screen !== 'game') return;
+    if (gameState.screen !== 'game' || gameState.paused) {
+        if (gameState.screen === 'game' && !gameState.paused) {
+            requestAnimationFrame(gameLoop);
+        }
+        return;
+    }
 
     const ctx = gameState.ctx;
     ctx.clearRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
@@ -949,12 +974,48 @@ document.addEventListener('touchmove', (e) => {
     }
 }, { passive: false });
 
+// メニュー表示
+function showMenu() {
+    gameState.paused = true;
+    gameState.previousScreen = gameState.screen;
+    gameState.screen = 'menu';
+    document.getElementById('menu-screen').style.display = 'flex';
+}
+
+// メニューを閉じる
+function closeMenu() {
+    gameState.paused = false;
+    gameState.screen = gameState.previousScreen;
+    document.getElementById('menu-screen').style.display = 'none';
+
+    // ゲーム画面ならループを再開
+    if (gameState.screen === 'game') {
+        requestAnimationFrame(gameLoop);
+    }
+}
+
+// ホームに戻る
+function goHome() {
+    // メニューを閉じる
+    document.getElementById('menu-screen').style.display = 'none';
+
+    // ゲームをリセット
+    resetGame();
+}
+
 // ボタンイベント
 document.getElementById('start-button').addEventListener('click', startGame);
 document.getElementById('restart-button').addEventListener('click', () => {
     // リワード画面のボタンを「次へ」に変更
     nextStage();
 });
+
+// メニューボタン
+document.getElementById('menu-button').addEventListener('click', showMenu);
+
+// メニュー内ボタン
+document.getElementById('resume-button').addEventListener('click', closeMenu);
+document.getElementById('home-button').addEventListener('click', goHome);
 
 // ページ読み込み時にCSVとプレイヤーグラフィックを読み込む
 window.addEventListener('load', async () => {
